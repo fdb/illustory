@@ -178,7 +178,7 @@ function App() {
           newStory.scenes.push({ id, name: 'New Scene', background: '', hotspots: [], objects: [] });
           commit(newStory);
           setCurrentSceneId(id);
-          setSelectedItemId(null);
+          setSelectedItemId('__background__');
         }}
       />
     </div>
