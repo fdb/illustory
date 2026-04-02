@@ -6,6 +6,7 @@ import { Sidebar } from './components/Sidebar.js';
 import { Properties } from './components/Properties.js';
 import { Toolbar } from './components/Toolbar.js';
 import { WelcomeScreen } from './components/WelcomeScreen.js';
+import { Player } from './components/Player.js';
 
 function App() {
   // Project state
@@ -19,6 +20,7 @@ function App() {
   const [activeTool, setActiveTool] = useState('select');
   const [lastSavedIndex, setLastSavedIndex] = useState(0);
   const [toast, setToast] = useState(null);
+  const [playing, setPlaying] = useState(false);
 
   // Derived state
   const story = history ? currentState(history) : null;
@@ -153,6 +155,7 @@ function App() {
         onCopyJson=${handleCopyJson}
         onOpenProject=${handleOpenProject}
         onRefreshImages=${handleRefreshImages}
+        onPlay=${() => setPlaying(true)}
       />
     </div>
     <div class="sidebar">
@@ -245,6 +248,11 @@ function App() {
       />
     </div>
     ${toast ? html`<div class="toast">${toast}</div>` : null}
+    ${playing ? html`<${Player}
+      story=${story}
+      resolveImageUrl=${resolveImageUrl}
+      onClose=${() => setPlaying(false)}
+    />` : null}
   `;
 }
 

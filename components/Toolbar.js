@@ -12,6 +12,7 @@ export function Toolbar({
   onCopyJson,
   onOpenProject,
   onRefreshImages,
+  onPlay,
 }) {
   return html`
     <button class="toolbar-btn" onClick=${onOpenProject} title="Open project folder">Open</button>
@@ -30,5 +31,7 @@ export function Toolbar({
     <button class="toolbar-btn save-btn ${isDirty ? 'dirty' : ''}" onClick=${onSave}
             title="Save story.json (Ctrl+S)">Save</button>
     <button class="toolbar-btn" onClick=${onCopyJson} title="Copy JSON to clipboard">Copy</button>
+    <div style="flex:1" />
+    <button class="toolbar-btn play-btn" onClick=${onPlay} title="Play the game">Play</button>
   `;
 }
