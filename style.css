@@ -311,3 +311,72 @@ body {
 
 /* Star icon for start scene */
 .star { color: var(--accent-yellow); font-size: 10px; margin-left: auto; }
+
+/* Save button */
+.save-btn {
+  background: var(--accent-green);
+  color: var(--bg-base);
+  font-weight: 600;
+}
+.save-btn:hover { opacity: 0.9; }
+.save-btn.dirty {
+  background: var(--accent-yellow);
+  color: var(--bg-base);
+}
+
+/* Image preview in properties */
+.prop-preview {
+  margin-top: 6px;
+  border-radius: 4px;
+  border: 1px solid var(--bg-highlight);
+  max-height: 120px;
+  object-fit: contain;
+}
+
+/* Welcome screen */
+.welcome-screen {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+}
+
+.welcome-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.welcome-title {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--accent-blue);
+  margin-bottom: 8px;
+}
+
+.welcome-subtitle {
+  color: var(--text-muted);
+  font-size: 14px;
+  margin-bottom: 32px;
+}
+
+.welcome-btn {
+  padding: 12px 32px;
+  background: var(--accent-blue);
+  color: var(--bg-base);
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.welcome-btn:hover { opacity: 0.9; }
+
+.welcome-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 16px;
+  line-height: 1.5;
+}

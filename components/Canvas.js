@@ -10,6 +10,7 @@ export function Canvas({
   story,
   selectedItemId,
   activeTool,
+  resolveImageUrl,
   onSelectHotspot,
   onDeselectAll,
   onHotspotCoordsChange,
@@ -144,19 +145,38 @@ export function Canvas({
     return () => window.removeEventListener('keydown', handler);
   }, [finishDrawing]);
 
+  // Resolve background image from filesystem
+  const [bgUrl, setBgUrl] = useState(null);
+  useEffect(() => {
+    setBgUrl(null);
+    setBgError(false);
+    if (scene?.background && resolveImageUrl) {
+      resolveImageUrl('backgrounds', scene.background).then(url => {
+        if (url) {
+          setBgUrl(url);
+          setBgError(false);
+        } else {
+          setBgError(true);
+        }
+      });
+    } else if (scene && !scene.background) {
+      setBgError(true);
+    }
+  }, [scene?.id, scene?.background, resolveImageUrl]);
+
   if (!scene) {
     return html`<span style="color:var(--text-muted)">No scene selected</span>`;
   }
 
-  const bgSrc = `../images/backgrounds/${scene.background}`;
-
   return html`
     <div class="canvas-wrapper">
-      <img src=${bgSrc}
+      ${bgUrl ? html`<img src=${bgUrl}
            alt=${scene.name}
            onError=${() => setBgError(true)}
-           onLoad=${() => setBgError(false)}
-           style=${bgError ? 'opacity: 0.3' : ''} />
+           style=${bgError ? 'opacity: 0.3' : ''} />` :
+        html`<div style="width:100%;aspect-ratio:2000/1125;background:var(--bg-overlay);display:flex;align-items:center;justify-content:center">
+          <span style="color:var(--text-muted)">No background</span>
+        </div>`}
       ${bgError ? html`<div style="position:absolute;top:10px;left:10px;color:var(--accent-yellow);font-size:12px">
         Background not found: ${scene.background}
       </div>` : null}

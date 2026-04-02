@@ -4,6 +4,8 @@ export function Properties({
   story,
   currentSceneId,
   selectedItemId,
+  imageFiles,
+  resolveImageUrl,
   onUpdateStory,
 }) {
   if (!selectedItemId) {
@@ -18,15 +20,17 @@ export function Properties({
   if (!scene) return null;
 
   if (selectedItemId === '__background__') {
-    return html`<${SceneProperties} story=${story} scene=${scene} onUpdateStory=${onUpdateStory} />`;
+    return html`<${SceneProperties}
+      story=${story} scene=${scene}
+      imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
+      onUpdateStory=${onUpdateStory} />`;
   }
 
   const hotspot = (scene.hotspots || []).find(h => h.id === selectedItemId);
   if (hotspot) {
     return html`<${HotspotProperties}
-      story=${story}
-      scene=${scene}
-      hotspot=${hotspot}
+      story=${story} scene=${scene} hotspot=${hotspot}
+      imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
       onUpdateStory=${onUpdateStory}
     />`;
   }
@@ -59,8 +63,8 @@ function ProjectProperties({ story, onUpdateStory }) {
   `;
 }
 
-function SceneProperties({ story, scene, onUpdateStory }) {
-  const [bgWarning, setBgWarning] = useState('');
+function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateStory }) {
+  const [bgPreviewUrl, setBgPreviewUrl] = useState(null);
 
   const update = (field, value) => {
     const s = structuredClone(story);
@@ -86,12 +90,15 @@ function SceneProperties({ story, scene, onUpdateStory }) {
     onUpdateStory(s);
   };
 
+  // Preview the background image
   useEffect(() => {
-    if (!scene.background) { setBgWarning('No background set'); return; }
-    fetch(`../images/backgrounds/${scene.background}`, { method: 'HEAD' })
-      .then(r => { setBgWarning(r.ok ? '' : `File not found: ${scene.background}`); })
-      .catch(() => setBgWarning(`Cannot check: ${scene.background}`));
-  }, [scene.background]);
+    setBgPreviewUrl(null);
+    if (scene.background && resolveImageUrl) {
+      resolveImageUrl('backgrounds', scene.background).then(url => setBgPreviewUrl(url));
+    }
+  }, [scene.background, resolveImageUrl]);
+
+  const bgAvailable = imageFiles.backgrounds.includes(scene.background);
 
   return html`
     <div class="prop-header">Scene</div>
@@ -107,9 +114,16 @@ function SceneProperties({ story, scene, onUpdateStory }) {
     </div>
     <div class="prop-group">
       <div class="prop-label">Background</div>
-      <input class="prop-input" value=${scene.background || ''}
-             onInput=${(e) => update('background', e.target.value)} />
-      ${bgWarning ? html`<div class="warning">${bgWarning}</div>` : null}
+      <select class="prop-select" value=${scene.background || ''}
+              onChange=${(e) => update('background', e.target.value)}>
+        <option value="">-- None --</option>
+        ${imageFiles.backgrounds.map(f => html`<option value=${f}>${f}</option>`)}
+        ${scene.background && !bgAvailable ? html`
+          <option value=${scene.background}>${scene.background} (missing)</option>
+        ` : null}
+      </select>
+      ${scene.background && !bgAvailable ? html`<div class="warning">File not found in images/backgrounds/</div>` : null}
+      ${bgPreviewUrl ? html`<img src=${bgPreviewUrl} class="prop-preview" />` : null}
     </div>
     <button class="delete-btn" onClick=${() => {
       if (!confirm('Delete this scene? This cannot be undone.')) return;
@@ -121,7 +135,7 @@ function SceneProperties({ story, scene, onUpdateStory }) {
   `;
 }
 
-function HotspotProperties({ story, scene, hotspot, onUpdateStory }) {
+function HotspotProperties({ story, scene, hotspot, imageFiles, resolveImageUrl, onUpdateStory }) {
   const object = hotspot.action === 'object'
     ? (scene.objects || []).find(o => o.id === hotspot.target)
     : null;
@@ -154,6 +168,26 @@ function HotspotProperties({ story, scene, hotspot, onUpdateStory }) {
     }
     onUpdateStory(s);
   };
+
+  // Highlight image preview
+  const [hlPreviewUrl, setHlPreviewUrl] = useState(null);
+  useEffect(() => {
+    setHlPreviewUrl(null);
+    if (hotspot.highlight_image && resolveImageUrl) {
+      resolveImageUrl('highlights', hotspot.highlight_image).then(url => setHlPreviewUrl(url));
+    }
+  }, [hotspot.highlight_image, resolveImageUrl]);
+
+  // Object image preview
+  const [objPreviewUrl, setObjPreviewUrl] = useState(null);
+  useEffect(() => {
+    setObjPreviewUrl(null);
+    if (object?.image && resolveImageUrl) {
+      resolveImageUrl('objects', object.image).then(url => setObjPreviewUrl(url));
+    }
+  }, [object?.image, resolveImageUrl]);
+
+  const hlAvailable = imageFiles.highlights.includes(hotspot.highlight_image);
 
   return html`
     <div class="prop-header">
@@ -194,8 +228,16 @@ function HotspotProperties({ story, scene, hotspot, onUpdateStory }) {
 
     <div class="prop-group">
       <div class="prop-label">Highlight Image</div>
-      <input class="prop-input" value=${hotspot.highlight_image || ''}
-             onInput=${(e) => updateHotspot('highlight_image', e.target.value)} />
+      <select class="prop-select" value=${hotspot.highlight_image || ''}
+              onChange=${(e) => updateHotspot('highlight_image', e.target.value)}>
+        <option value="">-- None --</option>
+        ${imageFiles.highlights.map(f => html`<option value=${f}>${f}</option>`)}
+        ${hotspot.highlight_image && !hlAvailable ? html`
+          <option value=${hotspot.highlight_image}>${hotspot.highlight_image} (missing)</option>
+        ` : null}
+      </select>
+      ${hotspot.highlight_image && !hlAvailable ? html`<div class="warning">File not found in images/highlights/</div>` : null}
+      ${hlPreviewUrl ? html`<img src=${hlPreviewUrl} class="prop-preview" />` : null}
     </div>
 
     <div class="prop-group">
@@ -226,8 +268,15 @@ function HotspotProperties({ story, scene, hotspot, onUpdateStory }) {
 
       <div class="prop-group">
         <div class="prop-label">Image</div>
-        <input class="prop-input" value=${object.image || ''}
-               onInput=${(e) => updateObject('image', e.target.value)} />
+        <select class="prop-select" value=${object.image || ''}
+                onChange=${(e) => updateObject('image', e.target.value)}>
+          <option value="">-- None --</option>
+          ${imageFiles.objects.map(f => html`<option value=${f}>${f}</option>`)}
+          ${object.image && !imageFiles.objects.includes(object.image) ? html`
+            <option value=${object.image}>${object.image} (missing)</option>
+          ` : null}
+        </select>
+        ${objPreviewUrl ? html`<img src=${objPreviewUrl} class="prop-preview" />` : null}
       </div>
 
       <div class="prop-group">

@@ -1,16 +1,24 @@
 import { html, render, useState, useEffect, useCallback } from './lib/preact-standalone.js';
 import { createHistory, pushState, undo, redo, currentState, canUndo, canRedo } from './lib/history.js';
+import { pickProjectDirectory, loadStory, saveStory, scanImages, getImageUrl, refreshImages } from './lib/filesystem.js';
 import { Canvas } from './components/Canvas.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Properties } from './components/Properties.js';
 import { Toolbar } from './components/Toolbar.js';
+import { WelcomeScreen } from './components/WelcomeScreen.js';
 
 function App() {
+  // Project state
+  const [dirHandle, setDirHandle] = useState(null);
+  const [imageFiles, setImageFiles] = useState({ backgrounds: [], objects: [], highlights: [] });
+
+  // Editor state
   const [history, setHistory] = useState(null);
   const [currentSceneId, setCurrentSceneId] = useState(null);
   const [selectedItemId, setSelectedItemId] = useState(null);
   const [activeTool, setActiveTool] = useState('select');
   const [lastSavedIndex, setLastSavedIndex] = useState(0);
+  const [toast, setToast] = useState(null);
 
   // Derived state
   const story = history ? currentState(history) : null;
@@ -28,19 +36,67 @@ function App() {
     setHistory(h => redo(h));
   }, []);
 
-  // Load story
-  useEffect(() => {
-    fetch('../story.json')
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null)
-      .then(data => {
-        const s = data || { title: 'Untitled', start_scene: '', scenes: [] };
-        setHistory(createHistory(s));
-        if (s.scenes.length > 0) {
-          setCurrentSceneId(s.start_scene || s.scenes[0].id);
-        }
-      });
+  // Open a project folder
+  const handleOpenProject = useCallback(async () => {
+    try {
+      const handle = await pickProjectDirectory();
+      const storyData = await loadStory(handle);
+      const images = await scanImages(handle);
+      setDirHandle(handle);
+      setImageFiles(images);
+      setHistory(createHistory(storyData));
+      setLastSavedIndex(0);
+      setSelectedItemId(null);
+      if (storyData.scenes.length > 0) {
+        setCurrentSceneId(storyData.start_scene || storyData.scenes[0].id);
+      } else {
+        setCurrentSceneId(null);
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        console.error('Failed to open project:', e);
+        setToast('Failed to open project folder');
+      }
+    }
   }, []);
+
+  // Save story.json to the project folder
+  const handleSave = useCallback(async () => {
+    if (!story || !dirHandle) return;
+    try {
+      await saveStory(dirHandle, story);
+      setLastSavedIndex(history.index);
+      setToast('Saved story.json');
+    } catch (e) {
+      console.error('Save failed:', e);
+      setToast('Save failed — check permissions');
+    }
+  }, [story, history, dirHandle]);
+
+  // Copy JSON to clipboard (fallback / convenience)
+  const handleCopyJson = useCallback(async () => {
+    if (!story) return;
+    const output = structuredClone(story);
+    for (const scene of output.scenes) {
+      delete scene.navigation;
+    }
+    await navigator.clipboard.writeText(JSON.stringify(output, null, 2));
+    setToast('Copied to clipboard');
+  }, [story]);
+
+  // Rescan images (e.g. after user adds files externally)
+  const handleRefreshImages = useCallback(async () => {
+    if (!dirHandle) return;
+    const images = await refreshImages(dirHandle);
+    setImageFiles(images);
+    setToast('Image list refreshed');
+  }, [dirHandle]);
+
+  // Resolve an image path to a blob URL
+  const resolveImageUrl = useCallback(async (subfolder, filename) => {
+    if (!dirHandle || !filename) return null;
+    return await getImageUrl(dirHandle, `${subfolder}/${filename}`);
+  }, [dirHandle]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -53,7 +109,10 @@ function App() {
           handleUndo();
         }
       }
-      // Tool shortcuts — only when not typing in an input
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        handleSave();
+      }
       const tag = document.activeElement?.tagName;
       if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
         if (e.key === 'v' || e.key === 'V') setActiveTool('select');
@@ -63,20 +122,9 @@ function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, handleSave]);
 
-  const handleCopyJson = useCallback(async () => {
-    if (!story) return;
-    const output = structuredClone(story);
-    for (const scene of output.scenes) {
-      delete scene.navigation;
-    }
-    await navigator.clipboard.writeText(JSON.stringify(output, null, 2));
-    setLastSavedIndex(history.index);
-    setToast('Copied to clipboard');
-  }, [story, history]);
-
-  const [toast, setToast] = useState(null);
+  // Toast auto-dismiss
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(null), 2000);
@@ -84,7 +132,10 @@ function App() {
     }
   }, [toast]);
 
-  if (!story) return html`<div class="toolbar" style="justify-content:center">Loading...</div>`;
+  // Welcome screen — no project open yet
+  if (!dirHandle || !story) {
+    return html`<${WelcomeScreen} onOpenProject=${handleOpenProject} />`;
+  }
 
   const currentScene = story.scenes.find(s => s.id === currentSceneId);
 
@@ -94,10 +145,14 @@ function App() {
         activeTool=${activeTool}
         canUndo=${canUndo(history)}
         canRedo=${canRedo(history)}
+        isDirty=${isDirty}
         onSetTool=${setActiveTool}
         onUndo=${handleUndo}
         onRedo=${handleRedo}
+        onSave=${handleSave}
         onCopyJson=${handleCopyJson}
+        onOpenProject=${handleOpenProject}
+        onRefreshImages=${handleRefreshImages}
       />
     </div>
     <div class="sidebar">
@@ -125,6 +180,7 @@ function App() {
         story=${story}
         selectedItemId=${selectedItemId}
         activeTool=${activeTool}
+        resolveImageUrl=${resolveImageUrl}
         onSelectHotspot=${(id) => { setSelectedItemId(id); setActiveTool('select'); }}
         onDeselectAll=${() => setSelectedItemId(null)}
         onHotspotCoordsChange=${(hotspotId, newCoords) => {
@@ -163,8 +219,9 @@ function App() {
         story=${story}
         currentSceneId=${currentSceneId}
         selectedItemId=${selectedItemId}
+        imageFiles=${imageFiles}
+        resolveImageUrl=${resolveImageUrl}
         onUpdateStory=${(newStory) => {
-          // Detect scene ID rename
           const oldScene = story.scenes.find(s => s.id === currentSceneId);
           if (oldScene) {
             const sceneIndex = story.scenes.indexOf(oldScene);
@@ -174,12 +231,10 @@ function App() {
             }
           }
           commit(newStory);
-          // If current scene was deleted, switch to first available
           if (!newStory.scenes.find(s => s.id === currentSceneId)) {
             setCurrentSceneId(newStory.scenes[0]?.id || null);
             setSelectedItemId(null);
           }
-          // If selected hotspot was deleted, deselect
           if (selectedItemId && selectedItemId !== '__project__' && selectedItemId !== '__background__') {
             const sc = newStory.scenes.find(s => s.id === currentSceneId);
             if (sc && !(sc.hotspots || []).find(h => h.id === selectedItemId)) {
