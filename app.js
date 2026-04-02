@@ -164,7 +164,12 @@ function App() {
         currentSceneId=${currentSceneId}
         selectedItemId=${selectedItemId}
         isDirty=${isDirty}
-        onSelectScene=${(id) => { setCurrentSceneId(id); setSelectedItemId(null); }}
+        onSelectScene=${(id) => { setCurrentSceneId(id); }}
+        onRenameScene=${(sceneId, newName) => {
+          const newStory = structuredClone(story);
+          const sc = newStory.scenes.find(s => s.id === sceneId);
+          if (sc) { sc.name = newName; commit(newStory); }
+        }}
         onSelectItem=${(id) => setSelectedItemId(id)}
         onSelectProject=${() => setSelectedItemId('__project__')}
         onAddScene=${() => {

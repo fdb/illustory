@@ -1,4 +1,4 @@
-import { html } from '../lib/preact-standalone.js';
+import { html, useState, useRef, useEffect } from '../lib/preact-standalone.js';
 
 export function Sidebar({
   story,
@@ -9,9 +9,11 @@ export function Sidebar({
   onSelectItem,
   onAddScene,
   onSelectProject,
+  onRenameScene,
 }) {
   const currentScene = story.scenes.find(s => s.id === currentSceneId);
   const hotspots = currentScene?.hotspots || [];
+  const [editingSceneId, setEditingSceneId] = useState(null);
 
   return html`
     <div class="project-title ${selectedItemId === '__project__' ? 'selected' : ''}"
@@ -22,11 +24,20 @@ export function Sidebar({
 
     <div class="section-label">Scenes</div>
     ${story.scenes.map(scene => html`
-      <div class="sidebar-item ${scene.id === currentSceneId ? 'selected' : ''}"
-           onClick=${() => onSelectScene(scene.id)}>
-        ${scene.name || scene.id}
-        ${scene.id === story.start_scene ? html`<span class="star">★</span>` : null}
-      </div>
+      ${editingSceneId === scene.id ? html`
+        <${InlineRename}
+          value=${scene.name || scene.id}
+          onCommit=${(newName) => { onRenameScene(scene.id, newName); setEditingSceneId(null); }}
+          onCancel=${() => setEditingSceneId(null)}
+        />
+      ` : html`
+        <div class="sidebar-item ${scene.id === currentSceneId ? 'selected' : ''}"
+             onClick=${() => { onSelectScene(scene.id); onSelectItem('__background__'); }}
+             onDblClick=${(e) => { e.preventDefault(); setEditingSceneId(scene.id); }}>
+          ${scene.name || scene.id}
+          ${scene.id === story.start_scene ? html`<span class="star">★</span>` : null}
+        </div>
+      `}
     `)}
     <div class="add-btn" onClick=${onAddScene}>+ Add Scene</div>
 
@@ -44,5 +55,32 @@ export function Sidebar({
         </div>
       `)}
     ` : null}
+  `;
+}
+
+function InlineRename({ value, onCommit, onCancel }) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, []);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      onCommit(e.target.value);
+    } else if (e.key === 'Escape') {
+      onCancel();
+    }
+  };
+
+  return html`
+    <input ref=${inputRef}
+           class="sidebar-rename"
+           value=${value}
+           onKeyDown=${handleKeyDown}
+           onBlur=${(e) => onCommit(e.target.value)} />
   `;
 }
