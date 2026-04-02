@@ -394,6 +394,19 @@ body {
   line-height: 1.5;
 }
 
+.welcome-unsupported {
+  background: var(--bg-overlay);
+  border: 1px solid var(--bg-highlight);
+  border-radius: 8px;
+  padding: 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.welcome-unsupported p { margin-bottom: 8px; }
+.welcome-unsupported p:last-child { margin-bottom: 0; }
+
 /* Play button */
 .play-btn {
   background: var(--accent-purple);
