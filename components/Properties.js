@@ -60,6 +60,16 @@ function ProjectProperties({ story, onUpdateStory }) {
         ${story.scenes.map(s => html`<option value=${s.id}>${s.name || s.id}</option>`)}
       </select>
     </div>
+    <div class="prop-group">
+      <div class="prop-label">Canvas Width</div>
+      <input class="prop-input" type="number" min="1" step="1" value=${story.width}
+             onChange=${(e) => update('width', Math.max(1, parseInt(e.target.value, 10) || 1))} />
+    </div>
+    <div class="prop-group">
+      <div class="prop-label">Canvas Height</div>
+      <input class="prop-input" type="number" min="1" step="1" value=${story.height}
+             onChange=${(e) => update('height', Math.max(1, parseInt(e.target.value, 10) || 1))} />
+    </div>
   `;
 }
 

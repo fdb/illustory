@@ -84,7 +84,7 @@ export function Player({ story, resolveImageUrl, onClose }) {
           <img class="player-highlight" src=${highlightUrl} />
         ` : null}
 
-        <svg class="player-svg" viewBox="0 0 2000 1125">
+        <svg class="player-svg" viewBox="0 0 ${story?.width ?? 2000} ${story?.height ?? 1125}">
           ${hotspots.map(hotspot => {
             const points = parseCoords(hotspot.coords);
             const pointsStr = points.map(p => `${p.x},${p.y}`).join(' ');

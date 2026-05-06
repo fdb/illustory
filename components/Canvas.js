@@ -1,8 +1,6 @@
 import { html, useRef, useEffect, useState, useCallback } from '../lib/preact-standalone.js';
 import { parseCoords, screenToSvg, distance, serializeCoords } from '../lib/coords.js';
 
-const VIEWBOX_W = 2000;
-const VIEWBOX_H = 1125;
 const CLOSE_THRESHOLD = 30;
 
 export function Canvas({
@@ -168,20 +166,25 @@ export function Canvas({
     return html`<span style="color:var(--text-muted)">No scene selected</span>`;
   }
 
+  // Canvas dimensions live on the story (project-wide); fall back to legacy 2000×1125
+  // for safety in case an older story slipped past loadStory's normalization.
+  const viewW = story?.width ?? 2000;
+  const viewH = story?.height ?? 1125;
+
   return html`
     <div class="canvas-wrapper">
       ${bgUrl ? html`<img src=${bgUrl}
            alt=${scene.name}
            onError=${() => setBgError(true)}
            style=${bgError ? 'opacity: 0.3' : ''} />` :
-        html`<div style="width:100%;aspect-ratio:2000/1125;background:var(--bg-overlay);display:flex;align-items:center;justify-content:center">
+        html`<div style="width:100%;aspect-ratio:${viewW}/${viewH};background:var(--bg-overlay);display:flex;align-items:center;justify-content:center">
           <span style="color:var(--text-muted)">No background</span>
         </div>`}
       ${bgError ? html`<div style="position:absolute;top:10px;left:10px;color:var(--accent-yellow);font-size:12px">
         Background not found: ${scene.background}
       </div>` : null}
       <svg ref=${svgRef}
-           viewBox="0 0 ${VIEWBOX_W} ${VIEWBOX_H}"
+           viewBox="0 0 ${viewW} ${viewH}"
            onClick=${handleSvgClick}
            onDblClick=${handleSvgDblClick}
            onContextMenu=${handleContextMenu}
