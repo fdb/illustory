@@ -1,28 +1,39 @@
-import { html, useState, useEffect, useCallback, useRef } from '../lib/preact-standalone.js';
+import { html, useState, useEffect, useCallback } from '../lib/preact-standalone.js';
 import { parseCoords } from '../lib/coords.js';
+import { pickVariant, resolveScene, initialGameState, applyAssignments } from '../lib/variants.js';
 
-/**
- * Fullscreen game player overlay.
- * Plays the current story from start_scene using filesystem images.
- */
 export function Player({ story, resolveImageUrl, onClose }) {
-  const [sceneId, setSceneId] = useState(story.start_scene || story.scenes[0]?.id);
-  const [objectOverlay, setObjectOverlay] = useState(null); // { image, description }
+  const startId = story.start_scene || story.scenes[0]?.id;
+  const [sceneId, setSceneId] = useState(startId);
+  const [gameState, setGameState] = useState(() => initialGameState(story));
+  const [activeVariant, setActiveVariant] = useState(null);
+  const [objectOverlay, setObjectOverlay] = useState(null);
   const [bgUrl, setBgUrl] = useState(null);
   const [highlightUrl, setHighlightUrl] = useState(null);
   const [objectImageUrl, setObjectImageUrl] = useState(null);
 
-  const scene = story.scenes.find(s => s.id === sceneId);
+  const rawScene = story.scenes.find(s => s.id === sceneId);
+  const scene = resolveScene(rawScene, activeVariant);
 
-  // Load background
+  // On scene change: pick variant from CURRENT gameState (before on_visit),
+  // then apply on_visit. This means a scene's first visit shows the base;
+  // subsequent visits can see variants that depend on the just-set flag.
+  useEffect(() => {
+    if (!rawScene) return;
+    setActiveVariant(pickVariant(rawScene, gameState));
+    if (rawScene.on_visit?.length) {
+      setGameState(prev => applyAssignments(prev, rawScene.on_visit));
+    }
+    // gameState intentionally omitted from deps — we read it as the "entry snapshot"
+  }, [sceneId]);
+
   useEffect(() => {
     setBgUrl(null);
     if (scene?.background) {
       resolveImageUrl('backgrounds', scene.background).then(setBgUrl);
     }
-  }, [sceneId, scene?.background, resolveImageUrl]);
+  }, [scene?.background, resolveImageUrl]);
 
-  // Load object overlay image when shown
   useEffect(() => {
     setObjectImageUrl(null);
     if (objectOverlay?.image) {
@@ -30,15 +41,11 @@ export function Player({ story, resolveImageUrl, onClose }) {
     }
   }, [objectOverlay?.image, resolveImageUrl]);
 
-  // Escape to close
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
-        if (objectOverlay) {
-          setObjectOverlay(null);
-        } else {
-          onClose();
-        }
+        if (objectOverlay) setObjectOverlay(null);
+        else onClose();
       }
     };
     window.addEventListener('keydown', handler);
@@ -46,6 +53,9 @@ export function Player({ story, resolveImageUrl, onClose }) {
   }, [objectOverlay, onClose]);
 
   const handleHotspotClick = useCallback((hotspot) => {
+    const newState = applyAssignments(gameState, hotspot.sets);
+    if (newState !== gameState) setGameState(newState);
+
     if (hotspot.action === 'navigate') {
       const target = story.scenes.find(s => s.id === hotspot.target);
       if (target) {
@@ -58,8 +68,13 @@ export function Player({ story, resolveImageUrl, onClose }) {
         setObjectOverlay(obj);
         setHighlightUrl(null);
       }
+      // Same scene — re-pick variant against the new state so the
+      // background can swap immediately if a condition just flipped.
+      if (newState !== gameState) {
+        setActiveVariant(pickVariant(rawScene, newState));
+      }
     }
-  }, [story, scene]);
+  }, [gameState, story, scene, rawScene]);
 
   const handleHotspotEnter = useCallback((hotspot) => {
     if (hotspot.highlight_image) {
@@ -67,22 +82,34 @@ export function Player({ story, resolveImageUrl, onClose }) {
     }
   }, [resolveImageUrl]);
 
-  const handleHotspotLeave = useCallback(() => {
-    setHighlightUrl(null);
-  }, []);
+  const handleHotspotLeave = useCallback(() => setHighlightUrl(null), []);
+
+  const handleReset = useCallback(() => {
+    setGameState(initialGameState(story));
+    setSceneId(startId);
+    setObjectOverlay(null);
+    setActiveVariant(null);
+  }, [story, startId]);
 
   const hotspots = scene?.hotspots || [];
+  const hasVariables = (story.variables || []).length > 0;
 
   return html`
     <div class="player-overlay">
       <button class="player-close" onClick=${onClose} title="Back to editor (Esc)">✕</button>
+      ${hasVariables ? html`
+        <button class="player-reset" onClick=${handleReset} title="Reset game state">↺</button>
+        <div class="player-state">
+          ${Object.entries(gameState).map(([k, v]) => html`
+            <span class="player-state-pill ${v ? 'on' : 'off'}">${k}</span>
+          `)}
+        </div>
+      ` : null}
 
       <div class="player-scene">
         ${bgUrl ? html`<img class="player-bg" src=${bgUrl} alt=${scene?.name} />` : null}
 
-        ${highlightUrl ? html`
-          <img class="player-highlight" src=${highlightUrl} />
-        ` : null}
+        ${highlightUrl ? html`<img class="player-highlight" src=${highlightUrl} />` : null}
 
         <svg class="player-svg" viewBox="0 0 ${story?.width ?? 2000} ${story?.height ?? 1125}">
           ${hotspots.map(hotspot => {

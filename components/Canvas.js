@@ -1,12 +1,14 @@
 import { html, useRef, useEffect, useState, useCallback } from '../lib/preact-standalone.js';
 import { parseCoords, screenToSvg, distance, serializeCoords } from '../lib/coords.js';
+import { findVariantById, resolveScene } from '../lib/variants.js';
 
 const CLOSE_THRESHOLD = 30;
 
 export function Canvas({
-  scene,
+  scene: rawScene,
   story,
   selectedItemId,
+  activeVariantId,
   activeTool,
   resolveImageUrl,
   onSelectHotspot,
@@ -15,6 +17,8 @@ export function Canvas({
   onNewHotspot,
   onNewObject,
 }) {
+  const variant = findVariantById(rawScene, activeVariantId);
+  const scene = resolveScene(rawScene, variant);
   const svgRef = useRef(null);
   const [drawingPoints, setDrawingPoints] = useState([]);
   const [cursorPos, setCursorPos] = useState(null);

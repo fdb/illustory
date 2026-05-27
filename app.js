@@ -1,6 +1,7 @@
 import { html, render, useState, useEffect, useCallback } from './lib/preact-standalone.js';
 import { createHistory, pushState, undo, redo, currentState, canUndo, canRedo } from './lib/history.js';
 import { pickProjectDirectory, loadStory, saveStory, scanImages, getImageUrl, refreshImages } from './lib/filesystem.js';
+import { getAdditionTarget, findHotspotOwner } from './lib/variants.js';
 import { Canvas } from './components/Canvas.js';
 import { Sidebar } from './components/Sidebar.js';
 import { Properties } from './components/Properties.js';
@@ -17,6 +18,7 @@ function App() {
   const [history, setHistory] = useState(null);
   const [currentSceneId, setCurrentSceneId] = useState(null);
   const [selectedItemId, setSelectedItemId] = useState(null);
+  const [activeVariantId, setActiveVariantId] = useState(null);
   const [activeTool, setActiveTool] = useState('select');
   const [lastSavedIndex, setLastSavedIndex] = useState(0);
   const [toast, setToast] = useState(null);
@@ -49,6 +51,7 @@ function App() {
       setHistory(createHistory(storyData));
       setLastSavedIndex(0);
       setSelectedItemId(null);
+      setActiveVariantId(null);
       if (storyData.scenes.length > 0) {
         setCurrentSceneId(storyData.start_scene || storyData.scenes[0].id);
       } else {
@@ -163,14 +166,27 @@ function App() {
         story=${story}
         currentSceneId=${currentSceneId}
         selectedItemId=${selectedItemId}
+        activeVariantId=${activeVariantId}
         isDirty=${isDirty}
-        onSelectScene=${(id) => { setCurrentSceneId(id); }}
+        onSelectScene=${(id) => {
+          if (id !== currentSceneId) {
+            setCurrentSceneId(id);
+            setActiveVariantId(null);
+          }
+        }}
         onRenameScene=${(sceneId, newName) => {
           const newStory = structuredClone(story);
           const sc = newStory.scenes.find(s => s.id === sceneId);
           if (sc) { sc.name = newName; commit(newStory); }
         }}
-        onSelectItem=${(id) => setSelectedItemId(id)}
+        onSelectItem=${(id) => {
+          setSelectedItemId(id);
+          if (id === '__background__') {
+            setActiveVariantId(null);
+          } else if (id?.startsWith('variant_')) {
+            setActiveVariantId(id.slice('variant_'.length));
+          }
+        }}
         onSelectProject=${() => setSelectedItemId('__project__')}
         onAddScene=${() => {
           const newStory = structuredClone(story);
@@ -179,6 +195,7 @@ function App() {
           commit(newStory);
           setCurrentSceneId(id);
           setSelectedItemId('__background__');
+          setActiveVariantId(null);
         }}
       />
     </div>
@@ -187,6 +204,7 @@ function App() {
         scene=${currentScene}
         story=${story}
         selectedItemId=${selectedItemId}
+        activeVariantId=${activeVariantId}
         activeTool=${activeTool}
         resolveImageUrl=${resolveImageUrl}
         onSelectHotspot=${(id) => { setSelectedItemId(id); setActiveTool('select'); }}
@@ -194,16 +212,19 @@ function App() {
         onHotspotCoordsChange=${(hotspotId, newCoords) => {
           const newStory = structuredClone(story);
           const scene = newStory.scenes.find(s => s.id === currentSceneId);
-          const hotspot = scene.hotspots.find(h => h.id === hotspotId);
-          hotspot.coords = newCoords;
-          commit(newStory);
+          const owner = findHotspotOwner(scene, hotspotId);
+          const hotspot = owner?.hotspots.find(h => h.id === hotspotId);
+          if (hotspot) {
+            hotspot.coords = newCoords;
+            commit(newStory);
+          }
         }}
         onNewHotspot=${(coords) => {
           const newStory = structuredClone(story);
           const scene = newStory.scenes.find(s => s.id === currentSceneId);
-          if (!scene.hotspots) scene.hotspots = [];
+          const target = getAdditionTarget(scene, activeVariantId);
           const id = 'hotspot_' + Date.now();
-          scene.hotspots.push({ id, coords, action: 'navigate', target: '', highlight_image: '' });
+          target.hotspots.push({ id, coords, action: 'navigate', target: '', highlight_image: '' });
           commit(newStory);
           setSelectedItemId(id);
           setActiveTool('select');
@@ -211,11 +232,10 @@ function App() {
         onNewObject=${(coords) => {
           const newStory = structuredClone(story);
           const scene = newStory.scenes.find(s => s.id === currentSceneId);
-          if (!scene.hotspots) scene.hotspots = [];
-          if (!scene.objects) scene.objects = [];
+          const target = getAdditionTarget(scene, activeVariantId);
           const id = 'object_' + Date.now();
-          scene.objects.push({ id, image: '', description: '' });
-          scene.hotspots.push({ id: id + '_hotspot', coords, action: 'object', target: id, highlight_image: '' });
+          target.objects.push({ id, image: '', description: '' });
+          target.hotspots.push({ id: id + '_hotspot', coords, action: 'object', target: id, highlight_image: '' });
           commit(newStory);
           setSelectedItemId(id + '_hotspot');
           setActiveTool('select');
@@ -227,8 +247,21 @@ function App() {
         story=${story}
         currentSceneId=${currentSceneId}
         selectedItemId=${selectedItemId}
+        activeVariantId=${activeVariantId}
         imageFiles=${imageFiles}
         resolveImageUrl=${resolveImageUrl}
+        onAddVariant=${(sceneId) => {
+          const newStory = structuredClone(story);
+          const sc = newStory.scenes.find(s => s.id === sceneId);
+          if (!sc) return;
+          if (!sc.variants) sc.variants = [];
+          const id = 'variant_' + Date.now();
+          sc.variants.push({ id, name: 'New Variant', conditions: [] });
+          commit(newStory);
+          setCurrentSceneId(sceneId);
+          setSelectedItemId('variant_' + id);
+          setActiveVariantId(id);
+        }}
         onUpdateStory=${(newStory) => {
           const oldScene = story.scenes.find(s => s.id === currentSceneId);
           if (oldScene) {
@@ -243,9 +276,15 @@ function App() {
             setCurrentSceneId(newStory.scenes[0]?.id || null);
             setSelectedItemId(null);
           }
-          if (selectedItemId && selectedItemId !== '__project__' && selectedItemId !== '__background__') {
+          if (selectedItemId && selectedItemId !== '__project__' && selectedItemId !== '__background__' && selectedItemId !== '__variables__') {
             const sc = newStory.scenes.find(s => s.id === currentSceneId);
-            if (sc && !(sc.hotspots || []).find(h => h.id === selectedItemId)) {
+            if (selectedItemId.startsWith('variant_')) {
+              const vid = selectedItemId.slice('variant_'.length);
+              if (sc && !(sc.variants || []).find(v => v.id === vid)) {
+                setSelectedItemId(null);
+                setActiveVariantId(null);
+              }
+            } else if (sc && !findHotspotOwner(sc, selectedItemId)) {
               setSelectedItemId(null);
             }
           }

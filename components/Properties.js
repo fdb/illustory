@@ -1,11 +1,14 @@
 import { html, useState, useEffect } from '../lib/preact-standalone.js';
+import { findVariantById, resolveScene, findHotspotOwner, findObjectOwner } from '../lib/variants.js';
 
 export function Properties({
   story,
   currentSceneId,
   selectedItemId,
+  activeVariantId,
   imageFiles,
   resolveImageUrl,
+  onAddVariant,
   onUpdateStory,
 }) {
   if (!selectedItemId) {
@@ -16,6 +19,10 @@ export function Properties({
     return html`<${ProjectProperties} story=${story} onUpdateStory=${onUpdateStory} />`;
   }
 
+  if (selectedItemId === '__variables__') {
+    return html`<${VariablesProperties} story=${story} onUpdateStory=${onUpdateStory} />`;
+  }
+
   const scene = story.scenes.find(s => s.id === currentSceneId);
   if (!scene) return null;
 
@@ -23,13 +30,27 @@ export function Properties({
     return html`<${SceneProperties}
       story=${story} scene=${scene}
       imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
+      onAddVariant=${onAddVariant}
       onUpdateStory=${onUpdateStory} />`;
   }
 
-  const hotspot = (scene.hotspots || []).find(h => h.id === selectedItemId);
+  if (selectedItemId.startsWith('variant_')) {
+    const vid = selectedItemId.slice('variant_'.length);
+    const variant = (scene.variants || []).find(v => v.id === vid);
+    if (variant) {
+      return html`<${VariantProperties}
+        story=${story} scene=${scene} variant=${variant}
+        imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
+        onUpdateStory=${onUpdateStory} />`;
+    }
+  }
+
+  const resolvedScene = resolveScene(scene, findVariantById(scene, activeVariantId));
+  const hotspot = (resolvedScene.hotspots || []).find(h => h.id === selectedItemId);
   if (hotspot) {
     return html`<${HotspotProperties}
       story=${story} scene=${scene} hotspot=${hotspot}
+      activeVariantId=${activeVariantId}
       imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
       onUpdateStory=${onUpdateStory}
     />`;
@@ -73,7 +94,138 @@ function ProjectProperties({ story, onUpdateStory }) {
   `;
 }
 
-function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateStory }) {
+function VariablesProperties({ story, onUpdateStory }) {
+  const variables = story.variables || [];
+
+  const updateVar = (index, field, value) => {
+    const s = structuredClone(story);
+    if (!s.variables) s.variables = [];
+    s.variables[index][field] = value;
+    onUpdateStory(s);
+  };
+
+  const renameVar = (index, newName) => {
+    const oldName = variables[index].name;
+    if (newName === oldName) return;
+    const s = structuredClone(story);
+    s.variables[index].name = newName;
+    for (const scene of s.scenes) {
+      for (const a of scene.on_visit || []) {
+        if (a.variable === oldName) a.variable = newName;
+      }
+      for (const v of scene.variants || []) {
+        for (const c of v.conditions || []) {
+          if (c.variable === oldName) c.variable = newName;
+        }
+      }
+      for (const h of scene.hotspots || []) {
+        for (const a of h.sets || []) {
+          if (a.variable === oldName) a.variable = newName;
+        }
+      }
+    }
+    onUpdateStory(s);
+  };
+
+  const addVar = () => {
+    const s = structuredClone(story);
+    if (!s.variables) s.variables = [];
+    const base = 'var_' + (s.variables.length + 1);
+    let name = base;
+    let n = 1;
+    while (s.variables.some(v => v.name === name)) { name = base + '_' + (++n); }
+    s.variables.push({ name, type: 'bool', default: false });
+    onUpdateStory(s);
+  };
+
+  const deleteVar = (index) => {
+    const name = variables[index].name;
+    if (!confirm(`Delete variable "${name}"? References in scenes/hotspots will be removed.`)) return;
+    const s = structuredClone(story);
+    s.variables.splice(index, 1);
+    for (const scene of s.scenes) {
+      scene.on_visit = (scene.on_visit || []).filter(a => a.variable !== name);
+      for (const v of scene.variants || []) {
+        v.conditions = (v.conditions || []).filter(c => c.variable !== name);
+      }
+      for (const h of scene.hotspots || []) {
+        h.sets = (h.sets || []).filter(a => a.variable !== name);
+      }
+    }
+    onUpdateStory(s);
+  };
+
+  return html`
+    <div class="prop-header">⚙ Variables</div>
+    <div style="color:var(--text-muted);font-size:11px;margin-bottom:12px;line-height:1.5">
+      Boolean flags set as the player visits scenes or clicks hotspots. Variants on scenes use these to conditionally swap the background.
+    </div>
+    ${variables.length === 0 ? html`
+      <div style="color:var(--text-muted);font-size:12px;margin-bottom:12px">No variables yet.</div>
+    ` : variables.map((v, i) => html`
+      <div class="prop-group" key=${i}>
+        <div class="prop-row">
+          <input class="prop-input" style="flex:1" value=${v.name}
+                 onChange=${(e) => renameVar(i, e.target.value)} />
+          <label class="prop-row-inline" title="Default value">
+            <input type="checkbox" checked=${!!v.default}
+                   onChange=${(e) => updateVar(i, 'default', e.target.checked)} />
+            <span>default</span>
+          </label>
+          <button class="row-delete" title="Delete variable"
+                  onClick=${() => deleteVar(i)}>✕</button>
+        </div>
+      </div>
+    `)}
+    <button class="add-row-btn" onClick=${addVar}>+ Add Variable</button>
+  `;
+}
+
+function AssignmentRowList({ rows, variables, label, onChange }) {
+  const update = (i, field, value) => {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: value } : r);
+    onChange(next);
+  };
+  const add = () => {
+    const firstVar = variables[0]?.name || '';
+    onChange([...rows, { variable: firstVar, value: true }]);
+  };
+  const remove = (i) => {
+    onChange(rows.filter((_, idx) => idx !== i));
+  };
+
+  return html`
+    <div class="prop-group">
+      <div class="prop-label">${label}</div>
+      ${variables.length === 0 ? html`
+        <div style="color:var(--text-muted);font-size:11px">Declare a variable first.</div>
+      ` : null}
+      ${rows.map((r, i) => html`
+        <div class="prop-row" key=${i}>
+          <select class="prop-select" style="flex:1" value=${r.variable}
+                  onChange=${(e) => update(i, 'variable', e.target.value)}>
+            <option value="">-- variable --</option>
+            ${variables.map(v => html`<option value=${v.name}>${v.name}</option>`)}
+            ${r.variable && !variables.find(v => v.name === r.variable)
+              ? html`<option value=${r.variable}>${r.variable} (missing)</option>` : null}
+          </select>
+          <span style="color:var(--text-muted);font-size:11px">=</span>
+          <select class="prop-select" style="width:70px" value=${String(r.value)}
+                  onChange=${(e) => update(i, 'value', e.target.value === 'true')}>
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+          <button class="row-delete" title="Remove" onClick=${() => remove(i)}>✕</button>
+        </div>
+      `)}
+      ${variables.length > 0 ? html`
+        <button class="add-row-btn" onClick=${add}>+ Add</button>
+      ` : null}
+    </div>
+  `;
+}
+
+function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onAddVariant, onUpdateStory }) {
   const [bgPreviewUrl, setBgPreviewUrl] = useState(null);
 
   const update = (field, value) => {
@@ -100,7 +252,6 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateSt
     onUpdateStory(s);
   };
 
-  // Preview the background image
   useEffect(() => {
     setBgPreviewUrl(null);
     if (scene.background && resolveImageUrl) {
@@ -111,7 +262,10 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateSt
   const bgAvailable = imageFiles.backgrounds.includes(scene.background);
 
   return html`
-    <div class="prop-header">Scene</div>
+    <div class="prop-header">
+      <span>Scene</span>
+      <button class="header-action" onClick=${() => onAddVariant(scene.id)}>+ Variant</button>
+    </div>
     <div class="prop-group">
       <div class="prop-label">Scene ID</div>
       <input class="prop-input" value=${scene.id}
@@ -135,6 +289,15 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateSt
       ${scene.background && !bgAvailable ? html`<div class="warning">File not found in images/backgrounds/</div>` : null}
       ${bgPreviewUrl ? html`<img src=${bgPreviewUrl} class="prop-preview" />` : null}
     </div>
+
+    <div class="prop-divider" />
+    <${AssignmentRowList}
+      rows=${scene.on_visit || []}
+      variables=${story.variables || []}
+      label="On Visit — set variables"
+      onChange=${(rows) => update('on_visit', rows)}
+    />
+
     <button class="delete-btn" onClick=${() => {
       if (!confirm('Delete this scene? This cannot be undone.')) return;
       const s = structuredClone(story);
@@ -145,41 +308,126 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateSt
   `;
 }
 
-function HotspotProperties({ story, scene, hotspot, imageFiles, resolveImageUrl, onUpdateStory }) {
-  const object = hotspot.action === 'object'
-    ? (scene.objects || []).find(o => o.id === hotspot.target)
+function VariantProperties({ story, scene, variant, imageFiles, resolveImageUrl, onUpdateStory }) {
+  const [bgPreviewUrl, setBgPreviewUrl] = useState(null);
+
+  const updateVariant = (field, value) => {
+    const s = structuredClone(story);
+    const sc = s.scenes.find(x => x.id === scene.id);
+    const v = sc.variants.find(x => x.id === variant.id);
+    v[field] = value;
+    onUpdateStory(s);
+  };
+
+  const updateVariantId = (newId) => {
+    if (newId === variant.id || !newId) return;
+    const s = structuredClone(story);
+    const sc = s.scenes.find(x => x.id === scene.id);
+    const v = sc.variants.find(x => x.id === variant.id);
+    v.id = newId;
+    onUpdateStory(s);
+  };
+
+  useEffect(() => {
+    setBgPreviewUrl(null);
+    const bg = variant.background ?? scene.background;
+    if (bg && resolveImageUrl) {
+      resolveImageUrl('backgrounds', bg).then(url => setBgPreviewUrl(url));
+    }
+  }, [variant.background, scene.background, resolveImageUrl]);
+
+  const bgOverride = variant.background ?? '';
+  const bgAvailable = bgOverride ? imageFiles.backgrounds.includes(bgOverride) : true;
+
+  return html`
+    <div class="prop-header">◐ Variant</div>
+    <div class="prop-group">
+      <div class="prop-label">Variant ID</div>
+      <input class="prop-input" value=${variant.id}
+             onChange=${(e) => updateVariantId(e.target.value)} />
+    </div>
+    <div class="prop-group">
+      <div class="prop-label">Name</div>
+      <input class="prop-input" value=${variant.name || ''}
+             onInput=${(e) => updateVariant('name', e.target.value)} />
+    </div>
+
+    <${AssignmentRowList}
+      rows=${variant.conditions || []}
+      variables=${story.variables || []}
+      label="Show this variant when…"
+      onChange=${(rows) => updateVariant('conditions', rows)}
+    />
+
+    <div class="prop-divider" />
+
+    <div class="prop-group">
+      <div class="prop-label">Background override</div>
+      <select class="prop-select" value=${bgOverride}
+              onChange=${(e) => updateVariant('background', e.target.value || undefined)}>
+        <option value="">-- Use base (${scene.background || 'none'}) --</option>
+        ${imageFiles.backgrounds.map(f => html`<option value=${f}>${f}</option>`)}
+        ${bgOverride && !bgAvailable ? html`
+          <option value=${bgOverride}>${bgOverride} (missing)</option>
+        ` : null}
+      </select>
+      ${bgOverride && !bgAvailable ? html`<div class="warning">File not found in images/backgrounds/</div>` : null}
+      ${bgPreviewUrl ? html`<img src=${bgPreviewUrl} class="prop-preview" />` : null}
+    </div>
+
+    <button class="delete-btn" onClick=${() => {
+      if (!confirm('Delete this variant?')) return;
+      const s = structuredClone(story);
+      const sc = s.scenes.find(x => x.id === scene.id);
+      sc.variants = sc.variants.filter(v => v.id !== variant.id);
+      onUpdateStory(s);
+    }}>Delete Variant</button>
+  `;
+}
+
+function HotspotProperties({ story, scene, hotspot, activeVariantId, imageFiles, resolveImageUrl, onUpdateStory }) {
+  // Find the actual container (base scene or one of its variants) holding this hotspot.
+  const hotspotOwner = findHotspotOwner(scene, hotspot.id);
+  const isVariantOwned = hotspotOwner && hotspotOwner !== scene;
+
+  const objectOwner = hotspot.action === 'object' && hotspot.target
+    ? findObjectOwner(scene, hotspot.target)
     : null;
+  const object = objectOwner?.objects.find(o => o.id === hotspot.target) || null;
 
   const updateHotspot = (field, value) => {
     const s = structuredClone(story);
     const sc = s.scenes.find(x => x.id === scene.id);
-    const h = sc.hotspots.find(x => x.id === hotspot.id);
-    h[field] = value;
-    onUpdateStory(s);
+    const owner = findHotspotOwner(sc, hotspot.id);
+    const h = owner?.hotspots.find(x => x.id === hotspot.id);
+    if (h) { h[field] = value; onUpdateStory(s); }
   };
 
   const updateObject = (field, value) => {
     const s = structuredClone(story);
     const sc = s.scenes.find(x => x.id === scene.id);
-    const obj = sc.objects.find(o => o.id === hotspot.target);
-    if (obj) {
-      obj[field] = value;
-      onUpdateStory(s);
-    }
+    const owner = findObjectOwner(sc, hotspot.target);
+    const obj = owner?.objects.find(o => o.id === hotspot.target);
+    if (obj) { obj[field] = value; onUpdateStory(s); }
   };
 
   const deleteHotspot = () => {
     if (!confirm('Delete this hotspot?')) return;
     const s = structuredClone(story);
     const sc = s.scenes.find(x => x.id === scene.id);
-    sc.hotspots = sc.hotspots.filter(h => h.id !== hotspot.id);
+    const owner = findHotspotOwner(sc, hotspot.id);
+    if (owner) {
+      owner.hotspots = owner.hotspots.filter(h => h.id !== hotspot.id);
+    }
     if (hotspot.action === 'object' && hotspot.target) {
-      sc.objects = (sc.objects || []).filter(o => o.id !== hotspot.target);
+      const objOwner = findObjectOwner(sc, hotspot.target);
+      if (objOwner) {
+        objOwner.objects = objOwner.objects.filter(o => o.id !== hotspot.target);
+      }
     }
     onUpdateStory(s);
   };
 
-  // Highlight image preview
   const [hlPreviewUrl, setHlPreviewUrl] = useState(null);
   useEffect(() => {
     setHlPreviewUrl(null);
@@ -188,7 +436,6 @@ function HotspotProperties({ story, scene, hotspot, imageFiles, resolveImageUrl,
     }
   }, [hotspot.highlight_image, resolveImageUrl]);
 
-  // Object image preview
   const [objPreviewUrl, setObjPreviewUrl] = useState(null);
   useEffect(() => {
     setObjPreviewUrl(null);
@@ -202,6 +449,7 @@ function HotspotProperties({ story, scene, hotspot, imageFiles, resolveImageUrl,
   return html`
     <div class="prop-header">
       ${hotspot.action === 'navigate' ? '↗' : '◇'} ${hotspot.id}
+      ${isVariantOwned ? html`<span class="variant-tag">extra in ${hotspotOwner.name || hotspotOwner.id}</span>` : null}
     </div>
 
     <div class="prop-group">
@@ -255,10 +503,18 @@ function HotspotProperties({ story, scene, hotspot, imageFiles, resolveImageUrl,
       <div class="prop-readonly">${hotspot.coords}</div>
     </div>
 
+    <div class="prop-divider" />
+    <${AssignmentRowList}
+      rows=${hotspot.sets || []}
+      variables=${story.variables || []}
+      label="On click — set variables"
+      onChange=${(rows) => updateHotspot('sets', rows)}
+    />
+
     <button class="delete-btn" onClick=${deleteHotspot}>Delete Hotspot</button>
 
     ${object ? html`
-      <div style="border-top:1px solid var(--bg-overlay);margin:16px 0" />
+      <div class="prop-divider" />
       <div class="prop-header">◇ Object: ${object.id}</div>
 
       <div class="prop-group">
@@ -268,11 +524,11 @@ function HotspotProperties({ story, scene, hotspot, imageFiles, resolveImageUrl,
                  const newId = e.target.value;
                  const s = structuredClone(story);
                  const sc = s.scenes.find(x => x.id === scene.id);
-                 const obj = sc.objects.find(o => o.id === object.id);
-                 const h = sc.hotspots.find(x => x.id === hotspot.id);
-                 obj.id = newId;
-                 h.target = newId;
-                 onUpdateStory(s);
+                 const objOwner = findObjectOwner(sc, object.id);
+                 const hOwner = findHotspotOwner(sc, hotspot.id);
+                 const obj = objOwner?.objects.find(o => o.id === object.id);
+                 const h = hOwner?.hotspots.find(x => x.id === hotspot.id);
+                 if (obj && h) { obj.id = newId; h.target = newId; onUpdateStory(s); }
                }} />
       </div>
 
