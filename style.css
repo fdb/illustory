@@ -140,6 +140,8 @@ body {
 .sidebar-item.indent-1 { padding-left: 24px; }
 .add-btn.indent-1 { padding-left: 24px; }
 
+.sidebar-item.dragging { opacity: 0.4; }
+
 .muted-count {
   color: var(--text-muted);
   font-size: 11px;

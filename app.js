@@ -180,6 +180,12 @@ function App() {
           const sc = newStory.scenes.find(s => s.id === sceneId);
           if (sc) { sc.name = newName; commit(newStory); }
         }}
+        onReorderScenes=${(orderedIds) => {
+          const newStory = structuredClone(story);
+          // Reorder whole scene objects (variants nested inside ride along).
+          newStory.scenes.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
+          commit(newStory);
+        }}
         onSelectItem=${(id) => {
           setSelectedItemId(id);
           if (id === '__background__') {
