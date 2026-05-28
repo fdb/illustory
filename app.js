@@ -12,7 +12,7 @@ import { Player } from './components/Player.js';
 function App() {
   // Project state
   const [dirHandle, setDirHandle] = useState(null);
-  const [imageFiles, setImageFiles] = useState({ backgrounds: [], objects: [], highlights: [] });
+  const [imageFiles, setImageFiles] = useState({ backgrounds: [], objects: [], highlights: [], movies: [] });
 
   // Editor state
   const [history, setHistory] = useState(null);
@@ -50,12 +50,13 @@ function App() {
       setImageFiles(images);
       setHistory(createHistory(storyData));
       setLastSavedIndex(0);
-      setSelectedItemId(null);
       setActiveVariantId(null);
       if (storyData.scenes.length > 0) {
         setCurrentSceneId(storyData.start_scene || storyData.scenes[0].id);
+        setSelectedItemId('__background__');
       } else {
         setCurrentSceneId(null);
+        setSelectedItemId(null);
       }
     } catch (e) {
       if (e.name !== 'AbortError') {
@@ -192,6 +193,15 @@ function App() {
           const newStory = structuredClone(story);
           const id = 'scene_' + Date.now();
           newStory.scenes.push({ id, name: 'New Scene', background: '', hotspots: [], objects: [] });
+          commit(newStory);
+          setCurrentSceneId(id);
+          setSelectedItemId('__background__');
+          setActiveVariantId(null);
+        }}
+        onAddMovieScene=${() => {
+          const newStory = structuredClone(story);
+          const id = 'movie_' + Date.now();
+          newStory.scenes.push({ id, name: 'New Movie', type: 'movie', video: '', next_scene: '', on_visit: [] });
           commit(newStory);
           setCurrentSceneId(id);
           setSelectedItemId('__background__');

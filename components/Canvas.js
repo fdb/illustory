@@ -17,6 +17,9 @@ export function Canvas({
   onNewHotspot,
   onNewObject,
 }) {
+  if (rawScene?.type === 'movie') {
+    return html`<${MovieCanvas} scene=${rawScene} story=${story} resolveImageUrl=${resolveImageUrl} />`;
+  }
   const variant = findVariantById(rawScene, activeVariantId);
   const scene = resolveScene(rawScene, variant);
   const svgRef = useRef(null);
@@ -243,6 +246,54 @@ export function Canvas({
           `)}
         ` : null}
       </svg>
+    </div>
+  `;
+}
+
+function MovieCanvas({ scene, story, resolveImageUrl }) {
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    setVideoUrl(null);
+    setError(false);
+    if (scene.video && resolveImageUrl) {
+      resolveImageUrl('movies', scene.video).then(url => {
+        if (url) setVideoUrl(url);
+        else setError(true);
+      });
+    } else if (!scene.video) {
+      setError(true);
+    }
+  }, [scene.id, scene.video, resolveImageUrl]);
+
+  const viewW = story?.width ?? 1920;
+  const viewH = story?.height ?? 1080;
+
+  // Seek a hair past 0 once metadata is loaded — forces the first frame
+  // to render as the poster in browsers that otherwise show black.
+  const handleLoadedMetadata = (e) => {
+    try { e.target.currentTime = 0.001; } catch {}
+  };
+
+  return html`
+    <div class="canvas-wrapper">
+      ${videoUrl ? html`
+        <video src=${videoUrl}
+               class="canvas-movie"
+               preload="metadata"
+               muted
+               playsinline
+               onLoadedMetadata=${handleLoadedMetadata}
+               onError=${() => setError(true)} />
+      ` : html`
+        <div style="width:100%;aspect-ratio:${viewW}/${viewH};background:var(--bg-overlay);display:flex;align-items:center;justify-content:center">
+          <span style="color:var(--text-muted)">${scene.video ? (error ? 'Video not found' : 'Loading…') : 'No video selected'}</span>
+        </div>
+      `}
+      ${error && scene.video ? html`<div style="position:absolute;top:10px;left:10px;color:var(--accent-yellow);font-size:12px">
+        Video not found: ${scene.video}
+      </div>` : null}
     </div>
   `;
 }
