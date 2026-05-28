@@ -9,18 +9,20 @@ export function Player({ story, resolveImageUrl, onClose }) {
   const [activeVariant, setActiveVariant] = useState(null);
   const [objectOverlay, setObjectOverlay] = useState(null);
   const [bgUrl, setBgUrl] = useState(null);
+  const [movieUrl, setMovieUrl] = useState(null);
   const [highlightUrl, setHighlightUrl] = useState(null);
   const [objectImageUrl, setObjectImageUrl] = useState(null);
 
   const rawScene = story.scenes.find(s => s.id === sceneId);
-  const scene = resolveScene(rawScene, activeVariant);
+  const isMovie = rawScene?.type === 'movie';
+  const scene = isMovie ? rawScene : resolveScene(rawScene, activeVariant);
 
   // On scene change: pick variant from CURRENT gameState (before on_visit),
   // then apply on_visit. This means a scene's first visit shows the base;
   // subsequent visits can see variants that depend on the just-set flag.
   useEffect(() => {
     if (!rawScene) return;
-    setActiveVariant(pickVariant(rawScene, gameState));
+    setActiveVariant(isMovie ? null : pickVariant(rawScene, gameState));
     if (rawScene.on_visit?.length) {
       setGameState(prev => applyAssignments(prev, rawScene.on_visit));
     }
@@ -29,10 +31,17 @@ export function Player({ story, resolveImageUrl, onClose }) {
 
   useEffect(() => {
     setBgUrl(null);
-    if (scene?.background) {
+    if (!isMovie && scene?.background) {
       resolveImageUrl('backgrounds', scene.background).then(setBgUrl);
     }
-  }, [scene?.background, resolveImageUrl]);
+  }, [scene?.background, isMovie, resolveImageUrl]);
+
+  useEffect(() => {
+    setMovieUrl(null);
+    if (isMovie && scene?.video) {
+      resolveImageUrl('movies', scene.video).then(setMovieUrl);
+    }
+  }, [scene?.video, isMovie, resolveImageUrl]);
 
   useEffect(() => {
     setObjectImageUrl(null);
@@ -41,16 +50,27 @@ export function Player({ story, resolveImageUrl, onClose }) {
     }
   }, [objectOverlay?.image, resolveImageUrl]);
 
+  const advanceMovie = useCallback(() => {
+    if (!isMovie) return;
+    const next = scene?.next_scene;
+    if (next && story.scenes.some(s => s.id === next)) {
+      setSceneId(next);
+    } else {
+      onClose();
+    }
+  }, [isMovie, scene, story, onClose]);
+
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
-        if (objectOverlay) setObjectOverlay(null);
+        if (isMovie) advanceMovie();
+        else if (objectOverlay) setObjectOverlay(null);
         else onClose();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [objectOverlay, onClose]);
+  }, [objectOverlay, onClose, isMovie, advanceMovie]);
 
   const handleHotspotClick = useCallback((hotspot) => {
     const newState = applyAssignments(gameState, hotspot.sets);
@@ -106,40 +126,60 @@ export function Player({ story, resolveImageUrl, onClose }) {
         </div>
       ` : null}
 
-      <div class="player-scene">
-        ${bgUrl ? html`<img class="player-bg" src=${bgUrl} alt=${scene?.name} />` : null}
+      ${isMovie ? html`
+        <${MoviePlayer} url=${movieUrl} onEnded=${advanceMovie} onSkip=${advanceMovie} />
+      ` : html`
+        <div class="player-scene">
+          ${bgUrl ? html`<img class="player-bg" src=${bgUrl} alt=${scene?.name} />` : null}
 
-        ${highlightUrl ? html`<img class="player-highlight" src=${highlightUrl} />` : null}
+          ${highlightUrl ? html`<img class="player-highlight" src=${highlightUrl} />` : null}
 
-        <svg class="player-svg" viewBox="0 0 ${story?.width ?? 2000} ${story?.height ?? 1125}">
-          ${hotspots.map(hotspot => {
-            const points = parseCoords(hotspot.coords);
-            const pointsStr = points.map(p => `${p.x},${p.y}`).join(' ');
-            return html`
-              <polygon
-                key=${hotspot.id}
-                points=${pointsStr}
-                fill="transparent"
-                style="cursor:pointer;pointer-events:auto"
-                onClick=${() => handleHotspotClick(hotspot)}
-                onMouseEnter=${() => handleHotspotEnter(hotspot)}
-                onMouseLeave=${handleHotspotLeave}
-              />
-            `;
-          })}
-        </svg>
-      </div>
-
-      ${objectOverlay ? html`
-        <div class="player-object-overlay" onClick=${(e) => {
-          if (e.target.classList.contains('player-object-overlay')) setObjectOverlay(null);
-        }}>
-          <div class="player-object-content">
-            ${objectImageUrl ? html`<img class="player-object-img" src=${objectImageUrl} />` : null}
-            <div class="player-object-desc">${objectOverlay.description}</div>
-          </div>
+          <svg class="player-svg" viewBox="0 0 ${story?.width ?? 2000} ${story?.height ?? 1125}">
+            ${hotspots.map(hotspot => {
+              const points = parseCoords(hotspot.coords);
+              const pointsStr = points.map(p => `${p.x},${p.y}`).join(' ');
+              return html`
+                <polygon
+                  key=${hotspot.id}
+                  points=${pointsStr}
+                  fill="transparent"
+                  style="cursor:pointer;pointer-events:auto"
+                  onClick=${() => handleHotspotClick(hotspot)}
+                  onMouseEnter=${() => handleHotspotEnter(hotspot)}
+                  onMouseLeave=${handleHotspotLeave}
+                />
+              `;
+            })}
+          </svg>
         </div>
-      ` : null}
+
+        ${objectOverlay ? html`
+          <div class="player-object-overlay" onClick=${(e) => {
+            if (e.target.classList.contains('player-object-overlay')) setObjectOverlay(null);
+          }}>
+            <div class="player-object-content">
+              ${objectImageUrl ? html`<img class="player-object-img" src=${objectImageUrl} />` : null}
+              <div class="player-object-desc">${objectOverlay.description}</div>
+            </div>
+          </div>
+        ` : null}
+      `}
     </div>
+  `;
+}
+
+function MoviePlayer({ url, onEnded, onSkip }) {
+  return html`
+    ${url ? html`
+      <video
+        class="player-movie"
+        src=${url}
+        autoplay
+        onEnded=${onEnded}
+        onClick=${onSkip}
+        onError=${onEnded}
+      />
+    ` : html`<div class="player-movie" onClick=${onSkip} />`}
+    <button class="player-skip" onClick=${onSkip} title="Skip (Esc)">Skip →</button>
   `;
 }

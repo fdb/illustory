@@ -10,12 +10,14 @@ export function Sidebar({
   onSelectScene,
   onSelectItem,
   onAddScene,
+  onAddMovieScene,
   onSelectProject,
   onRenameScene,
 }) {
   const currentScene = story.scenes.find(s => s.id === currentSceneId);
-  const activeVariant = findVariantById(currentScene, activeVariantId);
-  const resolvedScene = resolveScene(currentScene, activeVariant);
+  const isMovieScene = currentScene?.type === 'movie';
+  const activeVariant = isMovieScene ? null : findVariantById(currentScene, activeVariantId);
+  const resolvedScene = isMovieScene ? null : resolveScene(currentScene, activeVariant);
   const hotspots = resolvedScene?.hotspots || [];
   const [editingSceneId, setEditingSceneId] = useState(null);
 
@@ -43,6 +45,7 @@ export function Sidebar({
         <div class="sidebar-item ${scene.id === currentSceneId && selectedItemId === '__background__' ? 'selected' : ''}"
              onClick=${() => { onSelectScene(scene.id); onSelectItem('__background__'); }}
              onDblClick=${(e) => { e.preventDefault(); setEditingSceneId(scene.id); }}>
+          ${scene.type === 'movie' ? html`<span class="icon">▶</span>` : null}
           ${scene.name || scene.id}
           ${scene.id === story.start_scene ? html`<span class="star">★</span>` : null}
         </div>
@@ -55,8 +58,9 @@ export function Sidebar({
       `)}
     `)}
     <div class="add-btn" onClick=${onAddScene}>+ Add Scene</div>
+    <div class="add-btn" onClick=${onAddMovieScene}>+ Add Movie</div>
 
-    ${currentScene ? html`
+    ${currentScene && !isMovieScene ? html`
       <div class="section-label">Layers${activeVariant ? html` <span class="layers-context">— ${activeVariant.name || activeVariant.id}</span>` : ''}</div>
       <div class="sidebar-item ${selectedItemId === '__background__' ? 'selected' : ''}"
            onClick=${() => onSelectItem('__background__')}>

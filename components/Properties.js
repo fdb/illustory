@@ -27,6 +27,12 @@ export function Properties({
   if (!scene) return null;
 
   if (selectedItemId === '__background__') {
+    if (scene.type === 'movie') {
+      return html`<${MovieSceneProperties}
+        story=${story} scene=${scene}
+        imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
+        onUpdateStory=${onUpdateStory} />`;
+    }
     return html`<${SceneProperties}
       story=${story} scene=${scene}
       imageFiles=${imageFiles} resolveImageUrl=${resolveImageUrl}
@@ -241,14 +247,7 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onAddVaria
     const oldId = scene.id;
     const sc = s.scenes.find(x => x.id === oldId);
     sc.id = newId;
-    if (s.start_scene === oldId) s.start_scene = newId;
-    for (const otherScene of s.scenes) {
-      for (const h of otherScene.hotspots || []) {
-        if (h.action === 'navigate' && h.target === oldId) {
-          h.target = newId;
-        }
-      }
-    }
+    rewriteSceneRefs(s, oldId, newId);
     onUpdateStory(s);
   };
 
@@ -303,8 +302,136 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onAddVaria
       const s = structuredClone(story);
       s.scenes = s.scenes.filter(x => x.id !== scene.id);
       if (s.start_scene === scene.id) s.start_scene = s.scenes[0]?.id || '';
+      clearSceneRefs(s, scene.id);
       onUpdateStory(s);
     }}>Delete Scene</button>
+  `;
+}
+
+/**
+ * Rewrite all references to oldId → newId across the story:
+ * - start_scene
+ * - hotspot navigate targets
+ * - movie next_scene
+ */
+function rewriteSceneRefs(s, oldId, newId) {
+  if (s.start_scene === oldId) s.start_scene = newId;
+  for (const otherScene of s.scenes) {
+    if (otherScene.type === 'movie' && otherScene.next_scene === oldId) {
+      otherScene.next_scene = newId;
+    }
+    for (const h of otherScene.hotspots || []) {
+      if (h.action === 'navigate' && h.target === oldId) {
+        h.target = newId;
+      }
+    }
+  }
+}
+
+/**
+ * Clear references to a deleted sceneId in movie next_scene and
+ * hotspot navigate targets. Sets to empty string rather than removing,
+ * so the editor's "(missing)" UI surfaces the broken link.
+ */
+function clearSceneRefs(s, sceneId) {
+  for (const otherScene of s.scenes) {
+    if (otherScene.type === 'movie' && otherScene.next_scene === sceneId) {
+      otherScene.next_scene = '';
+    }
+    for (const h of otherScene.hotspots || []) {
+      if (h.action === 'navigate' && h.target === sceneId) {
+        h.target = '';
+      }
+    }
+  }
+}
+
+function MovieSceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpdateStory }) {
+  const [previewUrl, setPreviewUrl] = useState(null);
+
+  const update = (field, value) => {
+    const s = structuredClone(story);
+    const sc = s.scenes.find(x => x.id === scene.id);
+    sc[field] = value;
+    onUpdateStory(s);
+  };
+
+  const updateId = (newId) => {
+    if (newId === scene.id || !newId) return;
+    const s = structuredClone(story);
+    const oldId = scene.id;
+    const sc = s.scenes.find(x => x.id === oldId);
+    sc.id = newId;
+    rewriteSceneRefs(s, oldId, newId);
+    onUpdateStory(s);
+  };
+
+  useEffect(() => {
+    setPreviewUrl(null);
+    if (scene.video && resolveImageUrl) {
+      resolveImageUrl('movies', scene.video).then(url => setPreviewUrl(url));
+    }
+  }, [scene.video, resolveImageUrl]);
+
+  const movies = imageFiles.movies || [];
+  const videoAvailable = !scene.video || movies.includes(scene.video);
+  const nextSceneOptions = story.scenes.filter(s => s.id !== scene.id);
+  const nextSceneAvailable = !scene.next_scene || story.scenes.some(s => s.id === scene.next_scene);
+
+  return html`
+    <div class="prop-header">▶ Movie Scene</div>
+    <div class="prop-group">
+      <div class="prop-label">Scene ID</div>
+      <input class="prop-input" value=${scene.id}
+             onChange=${(e) => updateId(e.target.value)} />
+    </div>
+    <div class="prop-group">
+      <div class="prop-label">Name</div>
+      <input class="prop-input" value=${scene.name || ''}
+             onInput=${(e) => update('name', e.target.value)} />
+    </div>
+    <div class="prop-group">
+      <div class="prop-label">Video file</div>
+      <select class="prop-select" value=${scene.video || ''}
+              onChange=${(e) => update('video', e.target.value)}>
+        <option value="">-- None --</option>
+        ${movies.map(f => html`<option value=${f}>${f}</option>`)}
+        ${scene.video && !videoAvailable ? html`
+          <option value=${scene.video}>${scene.video} (missing)</option>
+        ` : null}
+      </select>
+      ${scene.video && !videoAvailable ? html`<div class="warning">File not found in images/movies/</div>` : null}
+      ${previewUrl ? html`<video src=${previewUrl} class="prop-preview" controls muted />` : null}
+    </div>
+    <div class="prop-group">
+      <div class="prop-label">Next scene (when movie ends or is skipped)</div>
+      <select class="prop-select" value=${scene.next_scene || ''}
+              onChange=${(e) => update('next_scene', e.target.value)}>
+        <option value="">-- Exit play mode --</option>
+        ${nextSceneOptions.map(s => html`<option value=${s.id}>${s.name || s.id}</option>`)}
+        ${scene.next_scene && !nextSceneAvailable ? html`
+          <option value=${scene.next_scene}>${scene.next_scene} (missing)</option>
+        ` : null}
+      </select>
+      ${scene.next_scene && !nextSceneAvailable ? html`<div class="warning">Scene not found</div>` : null}
+    </div>
+
+    <div class="prop-divider" />
+    <${AssignmentRowList}
+      rows=${scene.on_visit || []}
+      variables=${story.variables || []}
+      label="On Visit — set variables"
+      onChange=${(rows) => update('on_visit', rows)}
+    />
+
+    <button class="delete-btn" onClick=${() => {
+      if (!confirm('Delete this movie scene? This cannot be undone.')) return;
+      const s = structuredClone(story);
+      s.scenes = s.scenes.filter(x => x.id !== scene.id);
+      if (s.start_scene === scene.id) s.start_scene = s.scenes[0]?.id || '';
+      clearSceneRefs(s, scene.id);
+      onUpdateStory(s);
+    }}>Delete Movie Scene</button>
   `;
 }
 
