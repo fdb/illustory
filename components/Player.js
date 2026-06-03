@@ -2,7 +2,8 @@ import { html, useState, useEffect, useCallback } from '../lib/preact-standalone
 import { parseCoords } from '../lib/coords.js';
 import { pickVariant, resolveScene, initialGameState, applyAssignments } from '../lib/variants.js';
 
-export function Player({ story, resolveImageUrl, onClose }) {
+export function Player({ story, mode = 'test', resolveImageUrl, onClose }) {
+  const isTest = mode === 'test';
   const startId = story.start_scene || story.scenes[0]?.id;
   const [sceneId, setSceneId] = useState(startId);
   const [gameState, setGameState] = useState(() => initialGameState(story));
@@ -12,6 +13,15 @@ export function Player({ story, resolveImageUrl, onClose }) {
   const [movieUrl, setMovieUrl] = useState(null);
   const [highlightUrl, setHighlightUrl] = useState(null);
   const [objectImageUrl, setObjectImageUrl] = useState(null);
+
+  // Save points (test mode only). A snapshot is just { sceneId, gameState } —
+  // everything else re-derives from those via the effects below. Persisted to
+  // localStorage so a hand-built mid-game state survives closing the player.
+  const saveKey = `illustory:save:${story.title || 'untitled'}`;
+  const [slots, setSlots] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(saveKey)) || [null, null, null]; }
+    catch { return [null, null, null]; }
+  });
 
   const rawScene = story.scenes.find(s => s.id === sceneId);
   const isMovie = rawScene?.type === 'movie';
@@ -59,6 +69,13 @@ export function Player({ story, resolveImageUrl, onClose }) {
       onClose();
     }
   }, [isMovie, scene, story, onClose]);
+
+  // Play mode is "production": escape the browser chrome via the Fullscreen API.
+  useEffect(() => {
+    if (isTest) return;
+    document.documentElement.requestFullscreen?.().catch(() => {});
+    return () => { if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); };
+  }, [isTest]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -111,17 +128,50 @@ export function Player({ story, resolveImageUrl, onClose }) {
     setActiveVariant(null);
   }, [story, startId]);
 
+  const saveSlot = useCallback((i) => {
+    setSlots(prev => {
+      const next = prev.slice();
+      next[i] = { sceneId, gameState, sceneName: rawScene?.name || sceneId };
+      try { localStorage.setItem(saveKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [sceneId, gameState, rawScene, saveKey]);
+
+  const loadSlot = useCallback((i) => {
+    const snap = slots[i];
+    if (!snap) return;
+    setGameState(snap.gameState);
+    setSceneId(snap.sceneId); // triggers the [sceneId] effect, which re-picks
+    setObjectOverlay(null);   // the variant against the restored state
+    setActiveVariant(null);
+  }, [slots]);
+
   const hotspots = scene?.hotspots || [];
   const hasVariables = (story.variables || []).length > 0;
 
   return html`
     <div class="player-overlay">
-      <button class="player-close" onClick=${onClose} title="Back to editor (Esc)">✕</button>
-      ${hasVariables ? html`
-        <button class="player-reset" onClick=${handleReset} title="Reset game state">↺</button>
-        <div class="player-state">
-          ${Object.entries(gameState).map(([k, v]) => html`
-            <span class="player-state-pill ${v ? 'on' : 'off'}">${k}</span>
+      ${isTest ? html`
+        <button class="player-close" onClick=${onClose} title="Back to editor (Esc)">✕</button>
+        ${hasVariables ? html`
+          <button class="player-reset" onClick=${handleReset} title="Reset game state">↺</button>
+          <div class="player-state">
+            ${Object.entries(gameState).map(([k, v]) => html`
+              <span class="player-state-pill ${v ? 'on' : 'off'}">${k}</span>
+            `)}
+          </div>
+        ` : null}
+        <div class="player-slots">
+          <span class="player-slots-label">Save points</span>
+          ${slots.map((snap, i) => html`
+            <button
+              key=${i}
+              class="player-slot ${snap ? 'filled' : ''}"
+              title=${snap
+                ? `Slot ${i + 1} — ${snap.sceneName}\nClick: overwrite · Shift-click: restore`
+                : `Slot ${i + 1} empty\nClick to save current scene + variables`}
+              onClick=${(e) => (e.shiftKey ? loadSlot(i) : saveSlot(i))}
+            >${i + 1}</button>
           `)}
         </div>
       ` : null}

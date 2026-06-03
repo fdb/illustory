@@ -12,6 +12,7 @@ export function Toolbar({
   onCopyJson,
   onOpenProject,
   onRefreshImages,
+  onTest,
   onPlay,
 }) {
   return html`
@@ -32,6 +33,9 @@ export function Toolbar({
             title="Save story.json (Ctrl+S)">Save</button>
     <button class="toolbar-btn" onClick=${onCopyJson} title="Copy JSON to clipboard">Copy</button>
     <div style="flex:1" />
-    <button class="toolbar-btn play-btn" onClick=${onPlay} title="Play the game">Play</button>
+    <div class="play-group">
+      <button class="toolbar-btn" onClick=${onTest} title="Test the game — shows variables and controls">Test</button>
+      <button class="toolbar-btn play-btn" onClick=${onPlay} title="Play the game fullscreen — no editor UI">Play</button>
+    </div>
   `;
 }

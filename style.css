@@ -510,6 +510,7 @@ body {
 .welcome-unsupported p:last-child { margin-bottom: 0; }
 
 /* Play button */
+.play-group { display: flex; gap: 4px; }
 .play-btn {
   background: var(--accent-purple);
   color: var(--bg-base);
@@ -591,6 +592,41 @@ body {
   font-family: monospace;
 }
 .player-state-pill.on { color: var(--accent-green); }
+
+.player-slots {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 2010;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+.player-slots:hover { opacity: 1; }
+
+.player-slots-label {
+  color: #fff;
+  font-size: 11px;
+  margin-right: 2px;
+}
+
+.player-slot {
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.25);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.player-slot.filled {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+}
+.player-slot:hover { border-color: #fff; }
 
 .player-scene {
   position: relative;

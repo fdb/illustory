@@ -22,7 +22,7 @@ function App() {
   const [activeTool, setActiveTool] = useState('select');
   const [lastSavedIndex, setLastSavedIndex] = useState(0);
   const [toast, setToast] = useState(null);
-  const [playing, setPlaying] = useState(false);
+  const [playMode, setPlayMode] = useState(null);
 
   // Derived state
   const story = history ? currentState(history) : null;
@@ -159,7 +159,8 @@ function App() {
         onCopyJson=${handleCopyJson}
         onOpenProject=${handleOpenProject}
         onRefreshImages=${handleRefreshImages}
-        onPlay=${() => setPlaying(true)}
+        onTest=${() => setPlayMode('test')}
+        onPlay=${() => setPlayMode('play')}
       />
     </div>
     <div class="sidebar">
@@ -308,10 +309,11 @@ function App() {
       />
     </div>
     ${toast ? html`<div class="toast">${toast}</div>` : null}
-    ${playing ? html`<${Player}
+    ${playMode ? html`<${Player}
       story=${story}
+      mode=${playMode}
       resolveImageUrl=${resolveImageUrl}
-      onClose=${() => setPlaying(false)}
+      onClose=${() => setPlayMode(null)}
     />` : null}
   `;
 }
