@@ -154,13 +154,9 @@ export function Player({ story, resolveImageUrl, onClose }) {
         </div>
 
         ${objectOverlay ? html`
-          <div class="player-object-overlay" onClick=${(e) => {
-            if (e.target.classList.contains('player-object-overlay')) setObjectOverlay(null);
-          }}>
-            <div class="player-object-content">
-              ${objectImageUrl ? html`<img class="player-object-img" src=${objectImageUrl} />` : null}
-              <div class="player-object-desc">${objectOverlay.description}</div>
-            </div>
+          <div class="player-object-overlay" onClick=${() => setObjectOverlay(null)}>
+            ${objectImageUrl ? html`<img class="player-object-img" src=${objectImageUrl} />` : null}
+            ${objectOverlay.description ? html`<div class="player-object-desc">${objectOverlay.description}</div>` : null}
           </div>
         ` : null}
       `}
