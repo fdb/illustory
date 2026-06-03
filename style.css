@@ -447,6 +447,12 @@ body {
   object-fit: contain;
 }
 
+audio.prop-preview {
+  display: block;
+  width: 100%;
+  height: 36px;
+}
+
 /* Welcome screen */
 .welcome-screen {
   grid-column: 1 / -1;
