@@ -12,7 +12,7 @@ import { Player } from './components/Player.js';
 function App() {
   // Project state
   const [dirHandle, setDirHandle] = useState(null);
-  const [imageFiles, setImageFiles] = useState({ backgrounds: [], objects: [], highlights: [], movies: [] });
+  const [imageFiles, setImageFiles] = useState({ backgrounds: [], objects: [], highlights: [], movies: [], sounds: [] });
 
   // Editor state
   const [history, setHistory] = useState(null);

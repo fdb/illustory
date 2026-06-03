@@ -1,6 +1,7 @@
-import { html, useState, useEffect, useCallback } from '../lib/preact-standalone.js';
+import { html, useState, useEffect, useCallback, useRef } from '../lib/preact-standalone.js';
 import { parseCoords } from '../lib/coords.js';
 import { pickVariant, resolveScene, initialGameState, applyAssignments } from '../lib/variants.js';
+import { createSoundPlayer } from '../lib/audio.js';
 
 export function Player({ story, mode = 'test', resolveImageUrl, onClose }) {
   const isTest = mode === 'test';
@@ -13,6 +14,7 @@ export function Player({ story, mode = 'test', resolveImageUrl, onClose }) {
   const [movieUrl, setMovieUrl] = useState(null);
   const [highlightUrl, setHighlightUrl] = useState(null);
   const [objectImageUrl, setObjectImageUrl] = useState(null);
+  const soundPlayer = useRef(null);
 
   // Save points (test mode only). A snapshot is just { sceneId, gameState } —
   // everything else re-derives from those via the effects below. Persisted to
@@ -59,6 +61,19 @@ export function Player({ story, mode = 'test', resolveImageUrl, onClose }) {
       resolveImageUrl('objects', objectOverlay.image).then(setObjectImageUrl);
     }
   }, [objectOverlay?.image, resolveImageUrl]);
+
+  // One sound player for the whole play session; tears down (stops audio) on close.
+  useEffect(() => {
+    const player = createSoundPlayer((filename) => resolveImageUrl('sounds', filename));
+    soundPlayer.current = player;
+    return () => player.dispose();
+  }, [resolveImageUrl]);
+
+  // Cross-fade to the current scene's sound. Same file across scenes = no-op
+  // (keeps playing); movie scenes carry no `sound`, so they fade ambience out.
+  useEffect(() => {
+    soundPlayer.current?.crossfadeTo(scene?.sound);
+  }, [scene?.sound]);
 
   const advanceMovie = useCallback(() => {
     if (!isMovie) return;

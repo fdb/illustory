@@ -233,6 +233,7 @@ function AssignmentRowList({ rows, variables, label, onChange }) {
 
 function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onAddVariant, onUpdateStory }) {
   const [bgPreviewUrl, setBgPreviewUrl] = useState(null);
+  const [soundPreviewUrl, setSoundPreviewUrl] = useState(null);
 
   const update = (field, value) => {
     const s = structuredClone(story);
@@ -258,7 +259,16 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onAddVaria
     }
   }, [scene.background, resolveImageUrl]);
 
+  useEffect(() => {
+    setSoundPreviewUrl(null);
+    if (scene.sound && resolveImageUrl) {
+      resolveImageUrl('sounds', scene.sound).then(url => setSoundPreviewUrl(url));
+    }
+  }, [scene.sound, resolveImageUrl]);
+
   const bgAvailable = imageFiles.backgrounds.includes(scene.background);
+  const sounds = imageFiles.sounds || [];
+  const soundAvailable = !scene.sound || sounds.includes(scene.sound);
 
   return html`
     <div class="prop-header">
@@ -287,6 +297,20 @@ function SceneProperties({ story, scene, imageFiles, resolveImageUrl, onAddVaria
       </select>
       ${scene.background && !bgAvailable ? html`<div class="warning">File not found in images/backgrounds/</div>` : null}
       ${bgPreviewUrl ? html`<img src=${bgPreviewUrl} class="prop-preview" />` : null}
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Background Sound</div>
+      <select class="prop-select" value=${scene.sound || ''}
+              onChange=${(e) => update('sound', e.target.value || undefined)}>
+        <option value="">-- None --</option>
+        ${sounds.map(f => html`<option value=${f}>${f}</option>`)}
+        ${scene.sound && !soundAvailable ? html`
+          <option value=${scene.sound}>${scene.sound} (missing)</option>
+        ` : null}
+      </select>
+      ${scene.sound && !soundAvailable ? html`<div class="warning">File not found in images/sounds/</div>` : null}
+      ${soundPreviewUrl ? html`<audio src=${soundPreviewUrl} class="prop-preview" controls loop />` : null}
     </div>
 
     <div class="prop-divider" />
@@ -437,6 +461,7 @@ function MovieSceneProperties({ story, scene, imageFiles, resolveImageUrl, onUpd
 
 function VariantProperties({ story, scene, variant, imageFiles, resolveImageUrl, onUpdateStory }) {
   const [bgPreviewUrl, setBgPreviewUrl] = useState(null);
+  const [soundPreviewUrl, setSoundPreviewUrl] = useState(null);
 
   const updateVariant = (field, value) => {
     const s = structuredClone(story);
@@ -463,8 +488,19 @@ function VariantProperties({ story, scene, variant, imageFiles, resolveImageUrl,
     }
   }, [variant.background, scene.background, resolveImageUrl]);
 
+  useEffect(() => {
+    setSoundPreviewUrl(null);
+    const snd = variant.sound ?? scene.sound;
+    if (snd && resolveImageUrl) {
+      resolveImageUrl('sounds', snd).then(url => setSoundPreviewUrl(url));
+    }
+  }, [variant.sound, scene.sound, resolveImageUrl]);
+
   const bgOverride = variant.background ?? '';
   const bgAvailable = bgOverride ? imageFiles.backgrounds.includes(bgOverride) : true;
+  const sounds = imageFiles.sounds || [];
+  const soundOverride = variant.sound ?? '';
+  const soundAvailable = soundOverride ? sounds.includes(soundOverride) : true;
 
   return html`
     <div class="prop-header">◐ Variant</div>
@@ -500,6 +536,20 @@ function VariantProperties({ story, scene, variant, imageFiles, resolveImageUrl,
       </select>
       ${bgOverride && !bgAvailable ? html`<div class="warning">File not found in images/backgrounds/</div>` : null}
       ${bgPreviewUrl ? html`<img src=${bgPreviewUrl} class="prop-preview" />` : null}
+    </div>
+
+    <div class="prop-group">
+      <div class="prop-label">Sound override</div>
+      <select class="prop-select" value=${soundOverride}
+              onChange=${(e) => updateVariant('sound', e.target.value || undefined)}>
+        <option value="">-- Use base (${scene.sound || 'none'}) --</option>
+        ${sounds.map(f => html`<option value=${f}>${f}</option>`)}
+        ${soundOverride && !soundAvailable ? html`
+          <option value=${soundOverride}>${soundOverride} (missing)</option>
+        ` : null}
+      </select>
+      ${soundOverride && !soundAvailable ? html`<div class="warning">File not found in images/sounds/</div>` : null}
+      ${soundPreviewUrl ? html`<audio src=${soundPreviewUrl} class="prop-preview" controls loop />` : null}
     </div>
 
     <button class="delete-btn" onClick=${() => {
